@@ -67,7 +67,7 @@ def getsimpledates(person, model):
                     taq = year
                 if tpq < year:
                     tpq = year
-    return (taq, tpq)
+    return [taq, tpq]
 
 
 def getlinks(person, model):
@@ -86,7 +86,7 @@ def getcenturyfordates(taq, tpq, kb, personLname):
     firstc = taq//100
     secondc = tpq//100
     res = []
-    diff = secondc == firstc
+    diff = secondc - firstc
     if diff == 0:
         res.append(firstc+1)
         return res
@@ -95,8 +95,6 @@ def getcenturyfordates(taq, tpq, kb, personLname):
             res.append(i+1)
         return res
     if diff > 3:
-        if "problematic" not in kb:
-            kb["problematic"] = []
         kb["problematic"].append(personLname)
         res.append(secondc)
         return res
@@ -118,7 +116,7 @@ def getcenturyfordates(taq, tpq, kb, personLname):
         return res
     return res
 
-def cacheforPfile(pFilePath, res, kb):
+def cacheforPfile(pFilePath, kb):
     # if file name is the same as an image instance already present in the database, don't read file:
     #likelypQname = "bdr:"+Path(pFilePath).stem
     model = ConjunctiveGraph()
@@ -136,10 +134,6 @@ def cacheforPfile(pFilePath, res, kb):
         kb[personLname] = {"dates": dates}
         centuries = getcenturyfordates(dates[0], dates[1], kb, personLname)
         for c in centuries:
-            if c not in kb["percentury"]:
-                kb["percentury"][c] = 0
-            kb["percentury"][c] += 1
-            res.add((person, TMP.associatedCentury, Literal(c, datatype=XSD.integer)))
             found = True
     return found
 
@@ -176,31 +170,44 @@ def addmissing(res, kb):
         i += Iadd
     return i
 
-def main(wrid=None):
+def main(wrid=None, restorekb=True):
     res = Graph()
     NSM = NamespaceManager(res)
     NSM.bind("bdr", BDR)
     NSM.bind("bdo", BDO)
     NSM.bind("xsd", XSD)
     NSM.bind("tmp", TMP)
-    kb={"percentury": {}}
+    kb = {"percentury": {}, "problematic": []}
     if wrid is not None:
         md5 = hashlib.md5(str.encode(wrid))
         two = md5.hexdigest()[:2]
-        cacheforPfile(GITPATH+'/'+two+'/'+wrid+'.trig', res, kb)
+        cacheforPfile(GITPATH+'/'+two+'/'+wrid+'.trig', kb)
         print(yaml.dump(kb))
         return
-    l = sorted(glob.glob(GITPATH+'/**/P*.trig'))
     nbFound = 0
     nbNotFound = 0
-    for fname in VERBMODE == "-v" and tqdm(l) or l:
-        found = cacheforPfile(fname, res, kb)
-        if found is True:
+    if restorekb:
+        l = sorted(glob.glob(GITPATH+'/**/P*.trig'))
+        for fname in VERBMODE == "-v" and tqdm(l) or l:
+            found = cacheforPfile(fname, kb)
+            if found is True:
+                nbFound += 1
+            elif found is False:
+                nbNotFound += 1
+    else:
+        with open("kb.yml", 'rb') as stream:
+            kb = yaml.safe_load(stream)
+            if "problematic" not in kb:
+                kb["problematic"] = []
+    for p, info in kb.items():
+        if p.startswith("P") and "dates" in info:
             nbFound += 1
-            #break
-        elif found is False:
-            nbNotFound += 1
-            #break
+            centuries = getcenturyfordates(info['dates'][0], info['dates'][1], kb, p)
+            for c in centuries:
+                if c not in kb["percentury"]:
+                    kb["percentury"][c] = 0
+                kb["percentury"][c] += 1
+                res.add((BDR[p], TMP.associatedCentury, Literal(c, datatype=XSD.integer)))
     nbInferred = addmissing(res, kb)
     res.serialize("centuries.ttl", format="turtle")
     print("found %d, inferred %d, no info on %d" % (nbFound, nbInferred, nbNotFound-nbInferred))
@@ -209,14 +216,16 @@ def main(wrid=None):
         yaml.dump(kb, stream)
 
 def testgetc():
-    print(getcenturyfordates(1550, 1590, {}, ""))
-    print(getcenturyfordates(1550, 1600, {}, ""))
-    print(getcenturyfordates(1550, 1603, {}, ""))
-    print(getcenturyfordates(1550, 1650, {}, ""))
-    print(getcenturyfordates(1250, 1650, {}, ""))
-    print(getcenturyfordates(1500, 1599, {}, ""))
-    print(getcenturyfordates(1700, 1899, {}, ""))
+    kb = {"percentury": {}, "problematic": []}
+    print(getcenturyfordates(1550, 1590, kb, ""))
+    print(getcenturyfordates(1550, 1600, kb, ""))
+    print(getcenturyfordates(1550, 1603, kb, ""))
+    print(getcenturyfordates(1550, 1650, kb, ""))
+    print(getcenturyfordates(1250, 1650, kb, ""))
+    print(getcenturyfordates(1500, 1599, kb, ""))
+    print(getcenturyfordates(1700, 1899, kb, ""))
+    print(getcenturyfordates(1990, 1990, kb, ""))
 
-#testgetc()
-main("P2008")
-main()
+testgetc()
+#main("P2577")
+main(None, False)
