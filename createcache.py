@@ -41,34 +41,58 @@ NSM.bind("adm", ADM)
 NSM.bind("skos", SKOS)
 NSM.bind("rdfs", RDFS)
 
+def eventWhenToYears(ew):
+    ew = ew.replace("?", "").replace("%", "").replace("~", "")
+    nb = None
+    na = None
+    if len(ew) == 2:
+        # century
+        return ew+"00", ew+"99"
+    if len(ew) < 6 and "/" not in ew:
+        if "X" in ew:
+            nb = ew.replace("X", "0")
+            na = ew.replace("X", "9")
+            return nb, na
+        return ew, ew
+    if ew.startswith("/"):
+        ew = ew.replace("X", 9)
+        return None, ew
+    if ew.endswith("/"):
+        ew = ew.replace("X", 0)
+        return ew, None
+    if "/" in ew:
+        ewl = ew.split("/")
+        nb = ewl[0].replace("X", "0")
+        na = ewl[1].replace("X", "9")
+        return nb, na
+    if ew.startswith("[") or ew.startswith("{"):
+        ew = ew[1:-1]
+        ewl = ew.split(",")
+        nb = ewl[0].replace("X", "0")
+        na = ewl[-1].replace("X", "9")
+        return nb, na
+    return None, None
+
 def getsimpledates(person, model):
-    taq = 9999
-    tpq = 0
+    gnb = 9999
+    gna = 0
     for _, _, e in model.triples((person, BDO.personEvent, None)):
         eType = None
-        
         for _, _, t in model.triples((e, RDF.type, None)):
             eType = t
-        for _, p, o in model.triples((e, None, None)):
-            if p in [BDO.onYear, BDO.notBefore, BDO.notAfter, BDO.onDate]:
-                yearstr = str(o)
-                if len(yearstr) > 4:
-                    yearstr = yearstr[:4]
-                year = 0
+        for _, _, o in model.triples((e, BDO.eventWhen, None)):
+            nb, na = eventWhenToYears(str(o))
+            if nb is not None:
                 try:
-                    year = int(yearstr)
-                except:
-                    continue
-                if eType == BDO.PersonBirth:
-                    # case of P2008
-                    if p != BDO.notAfter or not yearstr.endswith("99"):
-                        year += 15
-                if taq > year:
-                    taq = year
-                if tpq < year:
-                    tpq = year
-    return [taq, tpq]
-
+                    gnb = min(gnb, int(nb))
+                except ValueError:
+                    print("wrong edtf for %s : %s" % (person, nb))
+            if na is not None:
+                try:
+                    gna = max(gna, int(na))
+                except ValueError:
+                    print("wrong edtf for %s : %s" % (person, na))
+    return [gnb, gna]
 
 def getlinks(person, model):
     res = []
@@ -120,7 +144,11 @@ def cacheforPfile(pFilePath, kb):
     # if file name is the same as an image instance already present in the database, don't read file:
     #likelypQname = "bdr:"+Path(pFilePath).stem
     model = ConjunctiveGraph()
-    model.parse(str(pFilePath), format="trig")
+    try:
+        model.parse(str(pFilePath), format="trig")
+    except:
+        print("cannot parse %s" % pFilePath)
+        return None
     if (None,  ADM.status, BDA.StatusReleased) not in model:
         return None
     found = False
@@ -226,6 +254,6 @@ def testgetc():
     print(getcenturyfordates(1700, 1899, kb, ""))
     print(getcenturyfordates(1990, 1990, kb, ""))
 
-testgetc()
+#testgetc()
 #main("P2577")
-main(None, False)
+main(None, True)
