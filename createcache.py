@@ -55,10 +55,10 @@ def eventWhenToYears(ew):
             return nb, na
         return ew, ew
     if ew.startswith("/"):
-        ew = ew.replace("X", 9)
+        ew = ew.replace("X", "9")
         return None, ew
     if ew.endswith("/"):
-        ew = ew.replace("X", 0)
+        ew = ew.replace("X", "0")
         return ew, None
     if "/" in ew:
         ewl = ew.split("/")
